@@ -35,8 +35,13 @@
       <div id="settings">Settings</div>
     </div>
   </div>
-  <button id="run">▶</button>
+  <div>
+    <button id="consoleBtn">🧠 Console</button>
+    <button id="run">▶ Run</button>
+  </div>
 </div>
+
+<div id="consolePanel" style="display:none; background:#000; color:#0f0; padding:10px; height:30vh; overflow:auto; font-family:monospace;"></div>
 
 <div id="editor"></div>
 <iframe id="output"></iframe>
@@ -245,7 +250,7 @@ async function updateCurrentFile() {
     const writable = await tab.handle.createWritable();
     await writable.write(tab.code);
     await writable.close();
-  } catch (e) { alert("Error saving file:", e); alert("Failed to save file."); }
+  } catch (e) { console.error("Error saving file:", e); alert("Failed to save file."); }
 }
 
 // ===== Auto-save on change =====
@@ -253,6 +258,71 @@ editor.on("change", () => {
     if (window.autoSaveTimeout) clearTimeout(window.autoSaveTimeout);
     window.autoSaveTimeout = setTimeout(() => { updateCurrentFile(); }, 1000);
 });
+  // ===== Console Panel =====
+const consolePanel = document.getElementById('consolePanel');
+const consoleBtn = document.getElementById('consoleBtn');
+
+// Custom console output capture
+(function(){
+  const oldLog = console.log;
+  const oldErr = console.error;
+  console.log = (...args) => {
+    oldLog(...args);
+    const msg = args.join(' ');
+    const div = document.createElement('div');
+    div.textContent = msg;
+    div.style.color = '#0f0';
+    consolePanel.appendChild(div);
+    consolePanel.scrollTop = consolePanel.scrollHeight;
+  };
+  console.error = (...args) => {
+    oldErr(...args);
+    const msg = args.join(' ');
+    const div = document.createElement('div');
+    div.textContent = 'Error: ' + msg;
+    div.style.color = 'red';
+    consolePanel.appendChild(div);
+    consolePanel.scrollTop = consolePanel.scrollHeight;
+  };
+})();
+
+// Toggle Console Panel
+consoleBtn.addEventListener('click', ()=>{
+  consolePanel.style.display = consolePanel.style.display === 'none' ? 'block' : 'none';
+});
+
+// Modify runCurrentTab to also log JS output directly
+function runCurrentTab() {
+  const tab = tabs.find(t => t.id === currentTab);
+  if (!tab) return;
+  tab.code = editor.getValue();
+  consolePanel.innerHTML = ''; // Clear console before run
+
+  if (tab.ext === 'html') {
+    output.srcdoc = tab.code;
+  } 
+  else if (tab.ext === 'js') {
+    try {
+      console.log("▶ Running JavaScript...");
+      new Function(tab.code)();
+      console.log("✅ Done.");
+    } catch(e) {
+      console.error(e);
+    }
+  } 
+  else if (tab.ext === 'css') {
+    output.srcdoc = `<html><head><style>${tab.code}</style></head><body><h1>CSS Preview</h1></body></html>`;
+  } 
+  else {
+    output.srcdoc = `<html><body><pre>${tab.code}</pre></body></html>`;
+  }
+
+  document.getElementById('controls').style.display = 'flex';
+  tabsDiv.style.display = 'flex';
+  editor.container.style.display = 'block';
+  output.style.display = tab.ext === 'html' || tab.ext === 'css' ? 'block' : 'none';
+  backBtn.style.display = tab.ext === 'html' || tab.ext === 'css' ? 'block' : 'none';
+}
 </script>
 
 </body>
