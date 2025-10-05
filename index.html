@@ -245,7 +245,7 @@ async function updateCurrentFile() {
     const writable = await tab.handle.createWritable();
     await writable.write(tab.code);
     await writable.close();
-  } catch (e) { console.error("Error saving file:", e); alert("Failed to save file."); }
+  } catch (e) { alert("Error saving file:", e); alert("Failed to save file."); }
 }
 
 // ===== Auto-save on change =====
