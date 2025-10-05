@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Fullscreen CodeCompiler - Multi Tab</title>
+<style>
+  body { font-family: Arial; margin: 0; display: flex; flex-direction: column; height: 100vh; }
+  #tabs { display: flex; background: #1e293b; padding: 5px; overflow-x: scroll; }
+  .tab { padding: 6px 12px; margin-right: 4px; background: #334155; color: #e6eef6; border-radius: 4px; cursor: pointer; display: flex; align-items: center; }
+  .tab.active { background: #06b6d4; color: #062028; }
+  .tab span.close { margin-left: 8px; color: red; cursor: pointer; font-weight: bold; }
+  #controls { display: flex; justify-content: space-between; background: #1e293b; padding: 10px; align-items: center; }
+  button { padding: 8px 12px; background: #06b6d4; border: none; border-radius: 4px; color: #062028; cursor: pointer; font-weight: bold; }
+  button:hover { background: #0891b2; }
+  #editor { flex: 1; }
+  iframe { position: fixed; top: 0; left: 0; width: 100%; height: 100%; border: none; display: none; }
+  #backButton { position: fixed; top: 10px; right: 10px; z-index: 9999; display: none; padding: 8px 14px; background: #06b6d4; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+  .options-dropdown { position: relative; display: inline-block; }
+  .dropdown-content { display: none; position: absolute; background-color: #334155; min-width: 180px; box-shadow: 0px 8px 16px rgba(0,0,0,0.2); border-radius: 4px; z-index: 1000; }
+  .dropdown-content div { color: #e6eef6; padding: 10px; cursor: pointer; }
+  .dropdown-content div:hover { background-color: #06b6d4; color: #062028; }
+</style>
+</head>
+<body>
+
+<div id="tabs"></div>
+
+<div id="controls">
+  <div class="options-dropdown">
+    <button id="optionsBtn">☰ Options</button>
+    <div id="optionsMenu" class="dropdown-content">
+      <div id="newFile">Create New File</div>
+      <div id="openFiles">Open from File Manager</div>
+      <div id="settings">Settings</div>
+    </div>
+  </div>
+  <button id="run">▶</button>
+</div>
+
+<div id="editor"></div>
+<iframe id="output"></iframe>
+<button id="backButton">⬅</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.4.14/ace.js"></script>
+<script>
+const editor = ace.edit("editor", { mode: "ace/mode/html", theme: "ace/theme/monokai", showPrintMargin: false, fontSize: 14 });
+const output = document.getElementById('output');
+const backBtn = document.getElementById('backButton');
+const tabsDiv = document.getElementById('tabs');
+
+let tabs = [];
+let currentTab = null;
+
+// ===== Tab Functions =====
+function createTab() {
+  let name = prompt("Enter File Name (with extension):");
+  if (!name) name = "Untitled.html";
+
+  const tabId = Date.now();
+  const ext = name.split('.').pop().toLowerCase();
+  let mode = 'ace/mode/text';
+  let template = "";
+
+  if (ext === 'html') {
+    mode = 'ace/mode/html';
+    template = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<title>${name}</title>
+<style>body{font-family:Arial; padding:10px;}</style>
+</head>
+<body>
+<h1>Hello World!</h1>
+<script>console.log('Running HTML');<\/script>
+</body>
+</html>`;
+  } else if (ext === 'css') {
+    mode = 'ace/mode/css';
+    template = `/* ${name} */\nbody{\n  font-family: Arial;\n  background-color: #f0f0f0;\n}`;
+  } else if (ext === 'js') {
+    mode = 'ace/mode/javascript';
+    template = `// ${name}\nconsole.log('Hello JS');`;
+  } else {
+    mode = 'ace/mode/text';
+    template = `// ${name}\n`;
+  }
+
+  const tab = { id: tabId, name: name, code: template, mode: mode, ext: ext };
+  tabs.push(tab);
+  renderTabs();
+  switchTab(tabId);
+}
+
+function renderTabs() {
+  tabsDiv.innerHTML = '';
+  tabs.forEach(t => {
+    const el = document.createElement('div');
+    el.className = 'tab' + (t.id === currentTab ? ' active' : '');
+    el.innerHTML = `${t.name} <span class="close">&times;</span>`;
+    
+    el.childNodes[0].addEventListener('click', () => switchTab(t.id)); // Tab name click
+    el.querySelector('.close').addEventListener('click', e => { // Close button
+      e.stopPropagation();
+      closeTab(t.id);
+    });
+
+    tabsDiv.appendChild(el);
+  });
+}
+
+function switchTab(id) {
+  if (currentTab !== null) {
+    const old = tabs.find(t => t.id === currentTab);
+    old.code = editor.getValue();
+  }
+  currentTab = id;
+  const tab = tabs.find(t => t.id === id);
+  editor.setValue(tab.code, -1);
+  editor.getSession().setMode(tab.mode);
+  renderTabs();
+}
+
+// ===== Close Tab =====
+function closeTab(tabId) {
+  const index = tabs.findIndex(t => t.id === tabId);
+  if (index === -1) return;
+
+  tabs.splice(index, 1);
+
+  if (currentTab === tabId) {
+    if (tabs.length > 0) {
+      const newIndex = index > 0 ? index - 1 : 0;
+      switchTab(tabs[newIndex].id);
+    } else {
+      currentTab = null;
+      editor.setValue("", -1);
+    }
+  }
+
+  renderTabs();
+}
+
+// ===== Run Current Tab =====
+function runCurrentTab() {
+  const tab = tabs.find(t => t.id === currentTab);
+  if (!tab) return;
+  tab.code = editor.getValue();
+
+  if (tab.ext === 'html') output.srcdoc = tab.code;
+  else if (tab.ext === 'js') output.srcdoc = `
+<html>
+<body style="background-color:black; color:lime; font-family:monospace; padding:10px;">
+<div id="console"></div>
+<script>
+const consoleDiv = document.getElementById('console');
+console.log = function(...args) { args.forEach(a => { const pre = document.createElement('pre'); pre.textContent = a; consoleDiv.appendChild(pre); }); };
+console.error = console.warn = console.log;
+try { ${tab.code} } catch(e) { console.log('Error:', e); }
+<\/script>
+</body>
+</html>`;
+  else if (tab.ext === 'css') output.srcdoc = `<html><head><style>${tab.code}</style></head><body><h1>CSS Preview</h1><p>Styles applied!</p></body></html>`;
+  else output.srcdoc = `<html><body><pre>${tab.code}</pre></body></html>`;
+
+  document.getElementById('controls').style.display = 'none';
+  tabsDiv.style.display = 'none';
+  editor.container.style.display = 'none';
+  output.style.display = 'block';
+  backBtn.style.display = 'block';
+}
+
+// ===== Back Button =====
+backBtn.addEventListener('click', ()=>{
+  output.style.display='none';
+  backBtn.style.display='none';
+  document.getElementById('controls').style.display='flex';
+  tabsDiv.style.display='flex';
+  editor.container.style.display='block';
+});
+
+// ===== Draggable Back Button =====
+const dragBtn = backBtn;
+let isDragging = false, offsetY = 0;
+dragBtn.style.right = '10px'; dragBtn.style.left = 'auto'; dragBtn.style.position = 'fixed';
+dragBtn.addEventListener('mousedown', e => { isDragging = true; offsetY = e.clientY - dragBtn.offsetTop; });
+document.addEventListener('mousemove', e => { if(isDragging){ let newTop = e.clientY - offsetY; newTop = Math.max(0, Math.min(window.innerHeight - dragBtn.offsetHeight, newTop)); dragBtn.style.top = newTop + 'px'; } });
+document.addEventListener('mouseup', ()=> isDragging=false);
+dragBtn.addEventListener('touchstart', e => { isDragging = true; offsetY = e.touches[0].clientY - dragBtn.offsetTop; });
+document.addEventListener('touchmove', e => { if(isDragging){ let newTop = e.touches[0].clientY - offsetY; newTop = Math.max(0, Math.min(window.innerHeight - dragBtn.offsetHeight, newTop)); dragBtn.style.top = newTop + 'px'; } }, { passive:false });
+document.addEventListener('touchend', ()=> isDragging=false);
+
+// ===== Run Button =====
+document.getElementById('run').addEventListener('click', runCurrentTab);
+
+// ===== Options Dropdown =====
+const optionsBtn = document.getElementById('optionsBtn');
+const optionsMenu = document.getElementById('optionsMenu');
+optionsBtn.addEventListener('click', () => { optionsMenu.style.display = optionsMenu.style.display === 'block' ? 'none' : 'block'; });
+document.addEventListener('click', e => { if(!optionsBtn.contains(e.target) && !optionsMenu.contains(e.target)) optionsMenu.style.display = 'none'; });
+document.getElementById('newFile').addEventListener('click', () => { createTab(); optionsMenu.style.display='none'; });
+
+// ===== Open Files =====
+document.getElementById('openFiles').addEventListener('click', async () => {
+  optionsMenu.style.display = 'none';
+  try {
+    const fileHandles = await window.showOpenFilePicker({ multiple: true, types: [ { description: 'Code Files', accept: { 'text/html': ['.html', '.htm'], 'text/css': ['.css'], 'application/javascript': ['.js'] } } ] });
+    for (const fileHandle of fileHandles) {
+      const file = await fileHandle.getFile();
+      const content = await file.text();
+      const name = file.name;
+      const ext = name.split('.').pop().toLowerCase();
+      const mode = ext==='html' ? 'ace/mode/html' : ext==='css' ? 'ace/mode/css' : ext==='js' ? 'ace/mode/javascript' : 'ace/mode/text';
+      const tabId = Date.now() + Math.random();
+      tabs.push({ id: tabId, name, code: content, mode, ext, handle: fileHandle });
+      renderTabs();
+      switchTab(tabId);
+    }
+  } catch(e) { console.log('File open cancelled or not supported.', e); }
+});
+
+// ===== Settings =====
+document.getElementById('settings').addEventListener('click', () => { optionsMenu.style.display='none'; alert("Settings panel placeholder!"); });
+
+// ===== Update / Save Current File =====
+async function updateCurrentFile() {
+  if (currentTab === null) return;
+  const tab = tabs.find(t => t.id === currentTab);
+  if (!tab) return;
+
+  tab.code = editor.getValue();
+
+  if (!tab.handle) {
+    const blob = new Blob([tab.code], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = tab.name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    return;
+  }
+
+  try {
+    const writable = await tab.handle.createWritable();
+    await writable.write(tab.code);
+    await writable.close();
+  } catch (e) { console.error("Error saving file:", e); alert("Failed to save file."); }
+}
+
+// ===== Auto-save on change =====
+editor.on("change", () => {
+    if (window.autoSaveTimeout) clearTimeout(window.autoSaveTimeout);
+    window.autoSaveTimeout = setTimeout(() => { updateCurrentFile(); }, 1000);
+});
+</script>
+
+</body>
+</html>
